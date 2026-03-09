@@ -21,7 +21,7 @@ on:
           - 'sm7635'
           - 'sm7550'
           - 'sm6375'
-        default: 'sm8650'
+        default: 'sm8550'
         
       FEIL:
         description: "手机型号"
@@ -60,7 +60,7 @@ on:
           - 'oneplus_nord_4_b'
           - 'oneplus_nord_ce4_lite_5g'
           - 'oneplus_nord_ce4_b'
-        default: 'oneplus_12_b'
+        default: 'oneplus_11_b'
         
       ANDROID_VERSION:
         description: "内核安卓KMI版本"
@@ -71,7 +71,7 @@ on:
           - 'android14'
           - 'android13'
           - 'android12'
-        default: 'android14'
+        default: 'android13'
         
       KERNEL_VERSION:
         description: "内核版本"
@@ -82,7 +82,13 @@ on:
           - '6.1'
           - '5.15'
           - '5.10'
-        default: '6.1'
+        default: '5.15'
+
+      KERNELSU_BRANCH:
+        description: "ReSukiSU分支"
+        required: true
+        type: string
+        default: 'main'
 
       SUSFS:
         description: "是否启用SUSFS"
@@ -91,7 +97,7 @@ on:
         options:
           - 'On'
           - 'Off'
-        default: 'Off'
+        default: 'On'
 
       KPM:
         description: "是否启用KPM"
@@ -109,7 +115,7 @@ on:
         options:
           - 'On'
           - 'Off'
-        default: 'Off'
+        default: 'On'
 
       bbg:
         description: "是否启用BBG基带保护"
@@ -118,7 +124,7 @@ on:
         options:
           - 'On'
           - 'Off'
-        default: 'On'
+        default: 'Off'
        
       bbr:
         description: "是否启用BBR算法(对手机日用无太大意义甚至可能负优化)"
@@ -138,6 +144,15 @@ on:
           - 'Off'
         default: 'On'
 
+      droidspaces:
+        description: "是否开启DroidSpaces支持？"
+        required: true
+        type: choice
+        options:
+          - 'On'
+          - 'Off'
+        default: 'On'
+
       UNICODE_BYPASS:
         description: "是否添加Unicode零宽绕过修复补丁(除5.10版本外版本不推荐开启, 建议使用 https://t.me/real5ec1cff/271 无痛修复)"
         required: true
@@ -145,7 +160,7 @@ on:
         options:
           - 'On'
           - 'Off'
-        default: 'Off'
+        default: 'On'
          
 jobs:
   build:
@@ -276,7 +291,7 @@ jobs:
           echo "✅ 内核配置完成"
 
       - name: "⚡ Setup Baseband-guard | 配置 Baseband-guard"
-        if: ${{ github.event.inputs.bbg == 'On' && github.event.inputs.KPM == 'Off' }}
+        if: ${{ github.event.inputs.bbg == 'On' && github.event.inputs.KPM == 'Off' && github.event.inputs.droidspaces == 'Off' }}
         run: |
           set -e
           cd kernel_workspace/kernel_platform/common
@@ -290,10 +305,10 @@ jobs:
 
           # 下载并执行设置脚本
           echo "🛠️ 正在设置ReSukiSU..."
-          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s main
+          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s ${{ github.event.inputs.KERNELSU_BRANCH }}
 
           cd KernelSU
-          KSU_VERSION=$(expr $(/usr/bin/git rev-list --count main) "+" 30700)
+          KSU_VERSION=$(expr $(/usr/bin/git rev-list --count ${{ github.event.inputs.KERNELSU_BRANCH }}) "+" 30700)
           echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
           
           echo "✅ ReSukiSU 配置完成"
@@ -304,7 +319,7 @@ jobs:
 
           echo "⬇️ 克隆所需补丁..."
           if [ "${{ github.event.inputs.SUSFS }}" == "On" ]; then          
-            git clone https://github.com/cctv18/susfs4oki.git -b oki-${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}
+            git clone https://gitlab.com/simonpunk/susfs4ksu.git -b gki-${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}
           fi
           git clone https://github.com/Xiaomichael/kernel_patches.git
           git clone https://github.com/ShirkNeko/SukiSU_patch.git
@@ -312,9 +327,9 @@ jobs:
           cd kernel_platform
           echo "📝 复制补丁文件..."
           if [ "${{ github.event.inputs.SUSFS }}" == "On" ]; then
-            cp ../susfs4oki/kernel_patches/50_add_susfs_in_gki-${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}.patch ./common/
-            cp ../susfs4oki/kernel_patches/fs/* ./common/fs/
-            cp ../susfs4oki/kernel_patches/include/linux/* ./common/include/linux/
+            cp ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}.patch ./common/
+            cp ../susfs4ksu/kernel_patches/fs/* ./common/fs/
+            cp ../susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
           else
             cp ../kernel_patches/sukisu/scope_min_manual_hooks_v1.9.patch ./common/
           fi
@@ -366,7 +381,7 @@ jobs:
 
           if [ "${{ github.event.inputs.SUSFS }}" == "On" ]; then
             echo "📦 应用SUSFS补丁..."
-            patch -p1 < 50_add_susfs_in_gki-${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}.patch || true
+            patch -p1 -F 3 < 50_add_susfs_in_gki-${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}.patch || true
           else
             echo "📦 应用MANUAL_HOOK补丁..."
             patch -p1 -F 3 < scope_min_manual_hooks_v1.9.patch
@@ -403,6 +418,26 @@ jobs:
             echo "✅ OGKI转换GKI_patch完成"
           fi
           
+      - name: "⚙️ Apply DroidSpaces Patch | 应用DroidSpaces补丁"
+        if: ${{ github.event.inputs.droidspaces == 'On' }}
+        run: |
+          cd kernel_workspace/kernel_platform/common
+          echo "⬇️ 正在拉取DroidSpaces补丁"
+          git clone https://github.com/Goldzxcbug/Droidspaces_Kernel_patch.git
+          echo "⬇️ 正在应用DroidSpaces补丁"
+          for patch_file in "./Droidspaces_Kernel_patch/OKI/${{ github.event.inputs.KERNEL_VERSION }}"/*.patch; do
+            if [ -f "$patch_file" ]; then
+              patch_name=$(basename "$patch_file")
+              echo "应用补丁: $patch_name"
+              patch -p1 -F 3 < "$patch_file"
+            fi
+          done
+          echo "⬇️ 正在应用NTsync补丁"
+          if [[ "${{ github.event.inputs.KERNEL_VERSION }}" != "6.12" ]]; then
+            patch -p1 -F 3 < "./Droidspaces_Kernel_patch/NTsync/ntsync_base.patch"
+          fi
+          patch -p1 -F 3 < "./Droidspaces_Kernel_patch/NTsync/ntsync_compat_${{ github.event.inputs.ANDROID_VERSION }}-${{ github.event.inputs.KERNEL_VERSION }}.patch"
+
       - name: "⚙️ Configure Kernel Options | 配置内核选项"
         run: |
           cd kernel_workspace/kernel_platform
@@ -442,7 +477,7 @@ jobs:
           echo "CONFIG_TMPFS_XATTR=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_TMPFS_POSIX_ACL=y" >> ./common/arch/arm64/configs/gki_defconfig
 
-          if [ "${{ github.event.inputs.bbg }}" == "On" ] && [ "${{ github.event.inputs.KPM }}" == "Off" ]; then
+          if [ "${{ github.event.inputs.bbg }}" == "On" ] && [ "${{ github.event.inputs.KPM }}" == "Off" ] && [ "${{ github.event.inputs.droidspaces }}" == "Off" ]; then
             echo "⚡ 配置 BBG 中..."
             echo 'CONFIG_BBG=y' >> ./common/arch/arm64/configs/gki_defconfig
             echo 'CONFIG_LSM="landlock,lockdown,yama,loadpin,safesetid,integrity,selinux,smack,tomoyo,apparmor,bpf,baseband_guard"' >> ./common/arch/arm64/configs/gki_defconfig
@@ -509,6 +544,40 @@ jobs:
           # 跳过将uapi标准头安装到 usr/include 目录的不必要操作，节省编译时间
           echo "CONFIG_HEADERS_INSTALL=n" >> ./common/arch/arm64/configs/gki_defconfig
 
+          if [ "${{ github.event.inputs.droidspaces }}" == "On" ]; then
+            # sed -i 's#$(obj)/config_data: $(KCONFIG_CONFIG) FORCE#$(obj)/config_data: arch/arm64/configs/stock_gki_defconfig FORCE#' ./common/kernel/Makefile
+            echo "📦 启用DroidSpaces功能..."
+            # 修复 [✗] PID namespace 和 [✗] IPC
+            echo "CONFIG_SYSCTL=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_SYSVIPC=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_POSIX_MQUEUE=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_NAMESPACES=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_PID_NS=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_IPC_NS=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_UTS_NS=y" >> ./common/arch/arm64/configs/gki_defconfig
+            # echo "CONFIG_USER_NS=y" >> ./common/arch/arm64/configs/gki_defconfig
+            # 修复 [✗] devtmpfs support
+            echo "CONFIG_DEVTMPFS=y=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_DEVTMPFS_MOUNT=y" >> ./common/arch/arm64/configs/gki_defconfig
+            # 修复 cgroup devices support
+            echo "CONFIG_CGROUPS=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_CGROUP_DEVICE=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_CGROUP_PIDS=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_MEMCG=y" >> ./common/arch/arm64/configs/gki_defconfig
+            # 网络 (Docker/NAT支持)
+            echo "CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y" >> ./common/arch/arm64/configs/gki_defconfig
+            # UFW支持
+            echo "CONFIG_NETFILTER_XT_TARGET_REJECT=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_NETFILTER_XT_TARGET_LOG=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_NETFILTER_XT_MATCH_RECENT=y" >> ./common/arch/arm64/configs/gki_defconfig
+            # Fail2ban支持
+            echo "CONFIG_IP_SET=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_IP_SET_HASH_IP=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_IP_SET_HASH_NET=y" >> ./common/arch/arm64/configs/gki_defconfig
+            echo "CONFIG_NETFILTER_XT_SET=y" >> ./common/arch/arm64/configs/gki_defconfig
+            # NTsync支持
+            echo "CONFIG_NTSYNC=y" >> ./common/arch/arm64/configs/gki_defconfig
+          fi
           echo "⚡ Remove check_defconfig"
           sed -i 's/check_defconfig//' ./common/build.config.gki
           echo "✅ 内核配置更新完成"
